@@ -36,6 +36,8 @@ struct AchievementsView: View {
 
     let sessions: [StudySession]
 
+    @Environment(\.horizontalSizeClass) var horizontalSizeClass
+
     var achievements: [Achievement] { buildAchievements() }
 
     var unlockedCount: Int { achievements.filter { $0.isUnlocked }.count }
@@ -67,7 +69,9 @@ struct AchievementsView: View {
                     Divider().padding(.horizontal)
 
                     // ── Achievement grid ─────────────────────────────────
-                    let columns = [GridItem(.flexible()), GridItem(.flexible())]
+                    // 3 columns on iPad, 2 on iPhone
+                    let columnCount = horizontalSizeClass == .regular ? 3 : 2
+                    let columns = Array(repeating: GridItem(.flexible()), count: columnCount)
 
                     LazyVGrid(columns: columns, spacing: 14) {
                         ForEach(achievements) { a in

@@ -26,6 +26,11 @@ struct ChartsView: View {
 
     let sessions: [StudySession]
 
+    @Environment(\.horizontalSizeClass) var horizontalSizeClass
+
+    // Max content width on iPad so charts don't stretch edge-to-edge
+    var maxContentWidth: CGFloat { horizontalSizeClass == .regular ? 700 : .infinity }
+
     enum ChartPeriod: String, CaseIterable {
         case weekly  = "7 Days"
         case monthly = "30 Days"
@@ -198,8 +203,10 @@ struct ChartsView: View {
                     Spacer(minLength: 20)
                 }
                 .padding(.top, 12)
+                .frame(maxWidth: maxContentWidth)
+                .frame(maxWidth: .infinity)  // centres on iPad
             }
-            .navigationTitle("Charts 📊")
+            .navigationTitle("Charts")
         }
     }
 

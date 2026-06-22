@@ -12,10 +12,25 @@ struct NewSessionView: View {
 
     @Environment(\.dismiss) var dismiss
 
+    // Recently used subjects stored in UserDefaults for autocomplete
+    @AppStorage("recentSubjects") private var recentSubjectsData: Data = Data()
+
     // Form fields
     @State private var subject = ""
     @State private var minutes = 30
     @State private var notes   = ""
+    @State private var showSubjectSuggestions = false
+
+    // Recent subjects decoded from AppStorage
+    var recentSubjects: [String] {
+        (try? JSONDecoder().decode([String].self, from: recentSubjectsData)) ?? []
+    }
+
+    // Subjects that match what the user has typed so far
+    var filteredSubjects: [String] {
+        guard !subject.isEmpty else { return recentSubjects }
+        return recentSubjects.filter { $0.localizedCaseInsensitiveContains(subject) }
+    }
 
     // ── Timer state ─────────────────────────────────────────────────────────
     // Whether the timer is actively counting
@@ -37,6 +52,22 @@ struct NewSessionView: View {
                 // ── Subject ────────────────────────────────────
                 Section("Subject") {
                     TextField("e.g. Math, History, Python...", text: $subject)
+                        .autocorrectionDisabled()
+                        .onChange(of: subject) { _, _ in
+                            showSubjectSuggestions = !subject.isEmpty
+                        }
+                    // Autocomplete suggestions
+                    if showSubjectSuggestions && !filteredSubjects.isEmpty {
+                        ForEach(filteredSubjects.prefix(4), id: \.self) { suggestion in
+                            Button {
+                                subject = suggestion
+                                showSubjectSuggestions = false
+                            } label: {
+                                Label(suggestion, systemImage: "clock.arrow.circlepath")
+                                    .foregroundStyle(.primary)
+                            }
+                        }
+                    }
                 }
 
                 // ── Timer ──────────────────────────────────────
@@ -107,13 +138,15 @@ struct NewSessionView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
+                        let trimmed = subject.trimmingCharacters(in: .whitespaces)
                         let session = StudySession(
-                            subject: subject.trimmingCharacters(in: .whitespaces),
+                            subject: trimmed,
                             minutes: minutes,
                             date: Date(),
                             notes: notes.trimmingCharacters(in: .whitespaces)
                         )
                         onSave(session)
+                        saveRecentSubject(trimmed)
                         dismiss()
                     }
                     // Save is disabled until a subject is entered
@@ -155,6 +188,16 @@ struct NewSessionView: View {
         if hours == 0 { return "\(mins) minutes" }
         if mins  == 0 { return "\(hours) hour\(hours > 1 ? "s" : "")" }
         return "\(hours) hour\(hours > 1 ? "s" : "") and \(mins) minutes"
+    }
+
+    // Saves subject to the recent-subjects list (deduplicated, capped at 10)
+    private func saveRecentSubject(_ name: String) {
+        guard !name.isEmpty else { return }
+        var list = recentSubjects
+        list.removeAll { $0.lowercased() == name.lowercased() }
+        list.insert(name, at: 0)
+        if list.count > 10 { list = Array(list.prefix(10)) }
+        recentSubjectsData = (try? JSONEncoder().encode(list)) ?? Data()
     }
 }
 

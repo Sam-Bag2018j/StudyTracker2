@@ -7,6 +7,9 @@ import SwiftUI
 
 struct ContentView: View {
 
+    // Detects iPad (regular) vs iPhone (compact) to drive adaptive layout
+    @Environment(\.horizontalSizeClass) var horizontalSizeClass
+
     // All study sessions are stored here
     @State private var sessions: [StudySession] = []
 
@@ -19,12 +22,16 @@ struct ContentView: View {
     // Controls whether Notification Settings sheet is showing
     @State private var showingNotificationSettings = false
 
+    // Controls first-run onboarding sheet
+    @AppStorage("hasSeenOnboarding") private var hasSeenOnboarding = false
+    @State private var showOnboarding = false
+
     // Upcoming exams cached from UserDefaults — refreshed each time the tab appears
     @State private var upcomingExams: [Exam] = []
 
     // Per-subject daily goals: maps subject name → goal in minutes
     @State private var subjectGoals: [String: Int] = [:]
-          // Daily goal in minutes (2 hours = 120 minutes)
+    // Daily goal in minutes (2 hours = 120 minutes)
     let dailyGoalMinutes = 120
 
     // --- Computed properties for stats ---
@@ -62,6 +69,20 @@ struct ContentView: View {
     // Upcoming (non-past) exams sorted by nearest date first
     var sortedUpcomingExams: [Exam] {
         upcomingExams.filter { !$0.isPast }.sorted { $0.date < $1.date }
+    }
+
+    // Current study streak (consecutive days up to and including today)
+    var currentStreak: Int {
+        let calendar    = Calendar.current
+        let studiedDays = Set(sessions.map { calendar.startOfDay(for: $0.date) })
+        var streak      = 0
+        var day         = calendar.startOfDay(for: Date())
+        while studiedDays.contains(day) {
+            streak += 1
+            guard let prev = calendar.date(byAdding: .day, value: -1, to: day) else { break }
+            day = prev
+        }
+        return streak
     }
 
     // Today's minutes studied for one specific subject
@@ -109,13 +130,15 @@ struct ContentView: View {
 
                         Divider()
 
-                        // Today / This Week / Total sessions row
+                        // Today / This Week / Total / Streak row
                         HStack {
                             StatCard(title: "Today",     value: formatMinutes(todayMinutes))
                             Divider()
                             StatCard(title: "This Week", value: formatMinutes(weekMinutes))
                             Divider()
                             StatCard(title: "Sessions",  value: "\(sessions.count)")
+                            Divider()
+                            StatCard(title: "🔥 Streak",  value: currentStreak == 0 ? "—" : "\(currentStreak)d")
                         }
                         .frame(height: 50)
                     }
@@ -186,7 +209,7 @@ struct ContentView: View {
                     }
                 }
             }
-            .navigationTitle("Study Tracker 📚")
+            .navigationTitle("Study Tracker")
             .toolbar {
                 // Goals button — always visible
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -223,10 +246,18 @@ struct ContentView: View {
                 NewSessionView { newSession in
                     sessions.append(newSession)
                     saveSessions()
+                    UINotificationFeedbackGenerator().notificationOccurred(.success)
+                }
+            }
+            // First-run onboarding
+            .sheet(isPresented: $showOnboarding) {
+                OnboardingView {
+                    hasSeenOnboarding = true
+                    showOnboarding = false
                 }
             }
             // Sheet for managing per-subject goals
-            .sheet(isPresented: $showingGoals) {
+            .sheet(isPresented: $showingGoals, onDismiss: saveSubjectGoals) {
                 GoalsView(subjectGoals: $subjectGoals, allSubjects: allSubjects)
             }
             .sheet(isPresented: $showingNotificationSettings) {
@@ -235,6 +266,10 @@ struct ContentView: View {
             .onAppear {
                 loadSessions()
                 loadUpcomingExams()
+                loadSubjectGoals()
+                if !hasSeenOnboarding {
+                    showOnboarding = true
+                }
             }
         }
         .tabItem { Label("Sessions", systemImage: "book.fill") }
@@ -246,6 +281,10 @@ struct ContentView: View {
         // ── Exams tab ────────────────────────────────────────────
         ExamsView()
             .tabItem { Label("Exams", systemImage: "calendar") }
+
+        // ── Homework tab ─────────────────────────────────────────
+        HomeworkView()
+            .tabItem { Label("Homework", systemImage: "book.closed") }
 
         // ── Grades tab ──────────────────────────────────────────
         GradesView()
@@ -290,6 +329,20 @@ struct ContentView: View {
             let decoded = try? JSONDecoder().decode([StudySession].self, from: data)
         else { return }
         sessions = decoded
+    }
+
+    func saveSubjectGoals() {
+        if let encoded = try? JSONEncoder().encode(subjectGoals) {
+            UserDefaults.standard.set(encoded, forKey: "studytracker.subjectGoals")
+        }
+    }
+
+    func loadSubjectGoals() {
+        guard
+            let data    = UserDefaults.standard.data(forKey: "studytracker.subjectGoals"),
+            let decoded = try? JSONDecoder().decode([String: Int].self, from: data)
+        else { return }
+        subjectGoals = decoded
     }
 }
 
